@@ -1,5 +1,7 @@
 # MPPP functions
 
+
+
 '''
 
 '''
@@ -16,6 +18,8 @@ import os
 import cv2
 import time
 import glob
+from multiprocessing import Pool, Manager
+from typing import Tuple
 
 from numpy.linalg import inv, norm, det
 
@@ -118,7 +122,6 @@ class image:
                         
                         self.im = pad_image( self.image, pad = [ self.pad_left, self.pad_right, self.pad_top, self.pad_bottom ] )
 
-        
         # Mars2020 SuperCam RMI color processing
         # elif self.filename[0]=='L':
 
@@ -205,7 +208,7 @@ class image:
         else:
             self.mask_im[ self.image[:,:,1] ==0 ] = 0
 
-        # Mars2020 Mastcam-Z mask processing    
+        # Mars2020 Mastcam-Z mask processing
         if self.filename[0] in [ 'Z', 'S']:
             
             self.mask_im[ :4,  :] = 0
@@ -217,7 +220,9 @@ class image:
                 self.ftau = 1.0
                 
             # use pre-saved mask
-            parent_path  = os.path.split( os.getcwd() )[0]
+            # parent_path  = os.path.split( os.getcwd() )[0]
+            # TODO: Change back when done
+            parent_path = os.getcwd()
             if self.filename[:2] == 'ZL':
                 mask_path = os.path.join( parent_path, 'params/ZL.jpg' )
             if self.filename[:2] == 'ZR':
@@ -226,7 +231,6 @@ class image:
                 mask_path = os.path.join( parent_path, 'params/S.jpg' )
             mask = cv2.imread( mask_path )
             self.mask_im[ mask[:,:,0] < 100 ] = 0
-               
 
         # Mars2020 SuperCam RMI mask processing        
         if self.filename[0] == 'L':
@@ -305,7 +309,6 @@ class image:
         
         
         # print( 'processed image', self.filename)
-
 
 
 #     def image_reference_perseverance( self ):
@@ -444,9 +447,6 @@ class image:
 
 # #         print( self.ypr )
 
-
-
-                
         
     def find_tau( self ):
         
@@ -463,29 +463,22 @@ class image:
 #         if self.sol >=700:
 #             self.tau = 0.5
 
-
     # Cmod
     
     def image_reference( self ):
         
-        
         GEOMETRIC_CAMERA_MODEL = self.label['GEOMETRIC_CAMERA_MODEL']
         self.cmod_from_cahvor( GEOMETRIC_CAMERA_MODEL )       
-        
         if self.filename[0] == 'H':
             self.find_Rt_veh2site_inginuity( )
         else:
             self.find_Rt_veh2site_perseverance( )
-        
+
         self.R_cam2ned  = R.from_matrix( [[0,-1,0],[1,0,0],[0,0,1]] ) 
         self.R_site2cam = self.R_cam2ned * self.R_veh2cam * self.R_veh2site.inv()
         self.ypr = find_ypr_from_R( self.R_site2cam  )    
         self.yaw, self.pitch, self.roll = self.ypr
         self.az, self.el = find_azel_from_ypr( self.ypr  )
-
-        
-    
-        
         
     def cmod_from_cahvor( self, GEOMETRIC_CAMERA_MODEL ):
         
@@ -539,8 +532,7 @@ class image:
         self.f  =  self.vs
         self.b1 = -self.hs * np.sin( self.theta ) - self.vs
         self.b2 =  self.hs * np.cos( self.theta )
-        
-    
+
     def find_Rt_veh2site_inginuity( self ):
         
         self.az       = 0
@@ -567,9 +559,7 @@ class image:
         self.R_veh2site =  self.R_HELI_M * self.R_HELI_G
         self.t_veh2site = -self.xyz_veh
         
-        
     def find_Rt_veh2site_perseverance( self ):
-        
         self.az       = self.label['SITE_DERIVED_GEOMETRY_PARMS']['INSTRUMENT_AZIMUTH'][0]
         self.az_veh = ( self.label['ROVER_DERIVED_GEOMETRY_PARMS']['INSTRUMENT_AZIMUTH'][0] - 
                            self.label['SITE_DERIVED_GEOMETRY_PARMS']['INSTRUMENT_AZIMUTH'][0])%360
@@ -577,8 +567,7 @@ class image:
         self.q  = q_wxyz2xyzw( self.label['ROVER_COORDINATE_SYSTEM']['ORIGIN_ROTATION_QUATERNION'] )
         self.R_veh = R.from_quat( self.q )
         self.Cr =  self.R_veh.apply( self.C, inverse=0 )
-        
-        
+
         self.xyz_veh = np.array( self.label['ROVER_COORDINATE_SYSTEM']['ORIGIN_OFFSET_VECTOR'] )
         
         self.xyz = self.Cr + np.array( self.label['ROVER_COORDINATE_SYSTEM']['ORIGIN_OFFSET_VECTOR'] )
@@ -595,10 +584,10 @@ class image:
         self.X, self.Y, self.Z = xyz_ned2enu( self.xyz )
         self.X_offset, self.Y_offset, self.Z_offset = xyz_ned2enu( self.xyz_veh )        
 
+
         if not self.find_offsets_mode:
             
             self.X_shift, self.Y_shift, self.Z_shift = XYZ_shift_offsets( self.site, self.drive )
-            
             self.X        += self.X_shift
             self.Y        += self.Y_shift
             self.Z        += self.Z_shift
@@ -764,7 +753,8 @@ def XYZ_shift_offsets( site, drive ):
 
     # print( site, drive )
 
-    parent_path  = os.path.split( os.getcwd() )[0]
+    # parent_path  = os.path.split( os.getcwd() )[0]
+    parent_path = os.getcwd()
     waypoint_shift_path = os.path.join( parent_path, 'params/Mars2020_waypoint_shifts.csv' )
 
     shift_params = np.loadtxt( waypoint_shift_path, delimiter=',', skiprows=1 )
@@ -800,7 +790,7 @@ def remove_duplicate_IMGs( IMG_paths ):
     for i in range( len( duplicates) ):
         all_i_paths = sorted( glob.glob( duplicates[i] +'*.IMG'))[::-1]
         duplicates_i_paths = all_i_paths[1:]
-        print( '\nkeeping  ', os.path.basename( all_i_paths[0] ) )
+        print( 'keeping  ', os.path.basename( all_i_paths[0] ) )
         for j in range(len( duplicates_i_paths )):
             print( 'removing ', os.path.basename( duplicates_i_paths[j] ) )
             os.remove( duplicates_i_paths[j] )
@@ -979,11 +969,11 @@ def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0 
                     im.im8a[:,:,3] = im.mask_im
                     cv2.imwrite( im.save_path_full, im.im8a )                
                 else:
-                    cv2.imwrite( im_save_path_full, im.im8[:,:,::-1] )  
-
+                    cv2.imwrite( im.save_path_full, im.im8[:,:,::-1] )
 
             # find image position and rotation parameters
             im.image_reference( )
+
 
             # save reference data for plotting        
             '''
@@ -997,6 +987,7 @@ def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0 
             rmcs      .append( im.label['ROVER_MOTION_COUNTER'])
             sols      .append( int(im.label['LOCAL_TRUE_SOLAR_TIME_SOL']) )
 
+
             # create a line for the reference file
             # Label	 X/East	Y/North	Z/Altitude	Yaw	Pitch	Roll
             pos_line =  im.save_name+'\t'\
@@ -1007,6 +998,7 @@ def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0 
                          +str( np.round( im.pitch,3))+'\t'\
                          +str( np.round( im.roll,3))+'\n'
 
+
             pos_lines.append( pos_line )
 
             try:
@@ -1015,8 +1007,7 @@ def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0 
             except:
                 print( 'sol {} site {} drive {}'.
                             format( im.sol, im.site, im.drive, ) )
-            print( '', i, pos_line[:], )
-            print( )
+            print( '', i, pos_line[:], end="\n\n")
 
         ####################################################
         ################# *** debugging *** ################
@@ -1060,3 +1051,264 @@ def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0 
 
         np.savetxt( directory_output+"/offsets_"+suf+".csv", table, delimiter="\t")
 
+
+# add transparrent pixels to restore the image's full, standard size
+pad_im = 1
+pad_im_z = 1
+
+# turn on when finding the waypoint offsets
+#     find_offsets_mode = 1
+
+# set the color values
+gamma = 2.2  # gamma value
+gamma = 2  # gamma value
+
+# fraction of the dynamic range to clip off the lower values of image
+clip_low_z = 0.02  # for the Mastcam-Z cameras
+clip_low = 0.05  # for everything else
+
+# scale all the scale parameters below bsy the same number
+scale_scale = 18
+
+# color balance parameters for the Mars 2020 science cameras
+scale_z, scale_red_z, scale_blue_z = [1.0 * scale_scale, 0.7, 1.5]  # Mastcam-Z
+scale_l, scale_red_l, scale_blue_l = [1.0 * scale_scale, 0.75, 1.40]  # SuperCam RMI
+scale_s, scale_red_s, scale_blue_s = [1.0 * scale_scale, 0.85, 1.40]  # SHERLOC WATSON
+
+# color balance parameters for the Mars 2020 engineering cameras
+scale_n, scale_red_n, scale_blue_n = [1.0 * scale_scale, 0.75, 1.2]  # Navcam
+scale_v, scale_red_v, scale_blue_v = [1.3 * scale_scale, 1.10, 0.93]  # Grayscale VCE Navcam
+scale_f, scale_red_f, scale_blue_f = [1.1 * scale_scale, 0.78, 1.25]  # Front Hazcam
+scale_r, scale_red_r, scale_blue_r = [1.1 * scale_scale, 0.78, 1.25]  # Rear Hazcam
+scale_hr, scale_red_hr, scale_blue_hr = [1.0 * scale_scale, 0.75, 1.43]  # Inginuity RTE
+scale_hn, scale_red_hn, scale_blue_hn = [1.0 * scale_scale, 1.08, 0.92]  # Inginuity Navcam
+
+
+def helper_image_list_process_pooled(i, img_path, shared_resources, lock, save_dir):
+    """
+    Helper function to process [im] within image_list_process_pooled
+    @param img_path: filepath to the image to read
+    @param shared_resources: dictionary of resources to write to for plotting
+    @param: write lock. Only when acquired could we write to the resource
+    """
+    # checks
+    assert os.path.isfile(img_path), f"{img_path} is not a valid path"
+
+    # constant values that are neded
+    save_im = 1
+    find_offsets_mode = 0
+
+    # add an alpha channel to the output images
+    save_mask = 1
+
+
+    try:
+
+        # open image
+        im = image(img_path)
+        print(f"{i} Processing {im.filename}...")
+
+        # Set color processing parameters
+        im.scale = scale_scale
+        im.scale_red = 1
+        im.scale_blue = 1
+        im.clip_low = clip_low
+        im.gamma = gamma
+        im.pad_im = pad_im
+        im.save_im = save_im
+        im.save_mask = save_mask
+        im.find_offsets_mode = find_offsets_mode
+
+        # Mars 2020 Mastcam-Z
+        if im.cam[0] == 'Z':
+            im.scale = scale_z
+            im.scale_red = scale_red_z
+            im.scale_blue = scale_blue_z
+            im.clip_low = clip_low_z
+            im.pad_im = pad_im_z
+
+        #             if 'IOF_N' in im.IMG_path:
+        #                 im.scale       = scale_n*1.4
+        #                 im.scale_red   = 0.65
+        #                 im.scale_blue  = 1.3
+
+        # Mars 2020 SHERLOC WATSON
+        if im.cam[0] == 'S':
+            im.scale = scale_s
+            im.scale_red = scale_red_s
+            im.scale_blue = scale_blue_s
+            im.clip_low = 0.0
+
+        # Mars 2020 SuperCam RMI
+        if im.cam[0] == 'L':
+            im.scale = scale_l
+            im.scale_red = scale_red_l
+            im.scale_blue = scale_blue_l
+
+        # Mars 2020 Navcam
+        if im.cam[0] == 'N':
+            im.scale = scale_n
+            im.scale_red = scale_red_n
+            im.scale_blue = scale_blue_n
+
+        # Mars 2020 Navcam VCE images
+        if 'MV0' in im.filename or 'M_0' in im.filename:
+            im.scale = scale_v
+            im.scale_red = scale_red_v
+            im.scale_blue = scale_blue_v
+            im.clip_low = 0.1
+
+        # Mars 2020 Front Hazcam
+        if im.cam[0] == 'F':
+            im.scale = scale_f
+            im.scale_red = scale_red_f
+            im.scale_blue = scale_blue_f
+            im.clip_low = clip_low / 2
+
+        # Mars 2020 Rear Hazcam
+        if im.cam[0] == 'R':
+            im.scale = scale_r
+            im.scale_red = scale_red_r
+            im.scale_blue = scale_blue_r
+            im.clip_low = clip_low / 2
+
+        # Heli Ingenuity RTE
+        if im.filename[0:3] == 'HSF':
+            im.scale = scale_hr
+            im.scale_red = scale_red_hr
+            im.scale_blue = scale_blue_hr
+
+        # Heli Ingenuity Navcam
+        if im.filename[0:3] == 'HNM':
+            im.scale = scale_hn
+            im.scale_red = scale_red_hn
+            im.scale_blue = scale_blue_hn
+            im.clip_low = 0.4
+
+        # create save directory
+        im.save_path_full = make_save_path(im.IMG_path, save_dir, fullpath=True, file_extension='.png')
+        im.save_path = make_save_path(im.IMG_path, save_dir, fullpath=False)
+        im.save_name = im.save_path_full.split('/')[-1]
+        csv_save_path = im.save_path_full
+
+        # process and save image
+        if im.save_im:
+
+            im.image_process()
+
+            if im.save_mask:
+                im.im8a = cv2.cvtColor(im.im8, cv2.COLOR_BGR2RGBA)
+                im.im8a[:, :, 3] = im.mask_im
+                cv2.imwrite(im.save_path_full, im.im8a)
+            else:
+                cv2.imwrite(im.save_path_full, im.im8[:, :, ::-1])
+
+        # find image position and rotation parameters
+        im.image_reference()
+
+        # create a line for the reference file
+        # Label	 X/East	Y/North	Z/Altitude	Yaw	Pitch	Roll
+        pos_line = im.save_name + '\t' \
+                   + str(np.round(im.X, 4)) + '\t' \
+                   + str(np.round(im.Y, 4)) + '\t' \
+                   + str(np.round(im.Z, 4)) + '\t' \
+                   + str(np.round(im.yaw, 3)) + '\t' \
+                   + str(np.round(im.pitch, 3)) + '\t' \
+                   + str(np.round(im.roll, 3)) + '\n'
+
+        # Acquire write lock to save data for plotting
+        with lock:
+            shared_resources['im_XYZs'].append([im.X, im.Y, im.Z])
+            shared_resources['veh_XYZs'].append([im.X_offset, im.Y_offset, im.Z_offset])
+            shared_resources['veh_azs'].append(im.az_veh)
+            shared_resources['im_azs'].append(im.az)
+            shared_resources['im_els'].append(im.el)
+            shared_resources['rmcs'].append(im.label['ROVER_MOTION_COUNTER'])
+            shared_resources['sols'].append(int(im.label['LOCAL_TRUE_SOLAR_TIME_SOL']))
+
+            shared_resources['pos_lines'].append(pos_line)
+
+            try:
+                print('sol {} site {} drive {}  zenith angle {:0.0f} scale {:0.2f}'.
+                      format(im.sol, im.site, im.drive, im.el * 57.3, im.ftau), end="\n\n")
+
+            except:
+                print('sol {} site {} drive {}'.
+                      format(im.sol, im.site, im.drive, ), end="\n\n")
+
+    except:
+        print(os.path.basename(im.IMG_path), 'failed to process! \n')
+
+
+def image_list_process_pooled(IMG_paths, directory_output, suf, find_offsets_mode=1):
+    """
+    Similar to image_list_process but pools the job to multiple workers
+
+    future work: save these calibration prameters as a text files, which we load for each camera
+    """
+
+
+    print(len(IMG_paths), 'images\n')
+
+    # multi-processing resources
+    pool = Pool()
+    manager = Manager()
+    lock = manager.Lock()       # lock to be passed around between processes
+    # shared resources to write to
+    # beyond python 3.6, shared containers can be nested
+    shared_resources = manager.dict({
+        'pos_lines': manager.list(),
+        'error_lines': manager.list(),
+        'veh_XYZs': manager.list(),
+        'im_XYZs': manager.list(),
+        'veh_azs': manager.list(),
+        'im_azs': manager.list(),
+        'im_els': manager.list(),
+        'sols': manager.list(),
+        'rmcs': manager.list()
+    })
+
+    # assign tasks to each of worker
+    for i,im_path in enumerate(IMG_paths):
+        pool.apply(helper_image_list_process_pooled,
+                         (i, im_path, shared_resources,
+                          lock, directory_output))
+
+    # close the pool
+    pool.close()
+    pool.join()
+
+    # time stamp to print to console
+    current_time = time.strftime("%Y%m%d-%H%M%S")
+
+    # save failed images list as TXT
+    if len(shared_resources['error_lines']) > 0:
+        csv_save_path = directory_output + '/failed_' + suf + '_' + current_time + '.txt'
+        with open(csv_save_path, 'w') as file:
+            for error_line in shared_resources['error_lines']:
+                file.write(error_line)
+
+        print('saved', csv_save_path)
+
+    # save image positions as CSV file
+    csv_save_path = directory_output + '/positions_' + suf + '_' + current_time + '.txt'
+    with open(csv_save_path, 'w') as file:
+        for pos_line in shared_resources['pos_lines']:
+            file.write(pos_line)
+        print('saved', csv_save_path)
+
+    plot_image_locations(IMG_paths, shared_resources['im_XYZs'], shared_resources['veh_XYZs'],
+                         shared_resources['veh_azs'], shared_resources['im_azs'],
+                         shared_resources['im_els'])
+
+    if find_offsets_mode:
+        sites = [shared_resources['rmcs'][i][0] for i in range(len(shared_resources['rmcs']))[::-1]]
+        drives = [shared_resources['rmcs'][i][1] for i in range(len(shared_resources['rmcs']))[::-1]]
+        Xs = [shared_resources['veh_XYZs'][i][0] for i in range(len(shared_resources['veh_XYZs']))[::-1]]
+        Ys = [shared_resources['veh_XYZs'][i][1] for i in range(len(shared_resources['veh_XYZs']))[::-1]]
+        Zs = [shared_resources['veh_XYZs'][i][2] for i in range(len(shared_resources['veh_XYZs']))[::-1]]
+
+        table = np.stack([shared_resources['sols'][::-1], sites, drives, Xs, Ys, Zs], axis=1)
+        np.round(table, 4)
+
+        np.savetxt(directory_output + "/offsets_" + suf + ".csv", table, delimiter="\t")
