@@ -1051,6 +1051,9 @@ def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0 
 
         np.savetxt( directory_output+"/offsets_"+suf+".csv", table, delimiter="\t")
 
+"""
+Below is code added
+"""
 
 # add transparrent pixels to restore the image's full, standard size
 pad_im = 1
